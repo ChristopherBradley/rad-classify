@@ -13,7 +13,7 @@ Activate the environment with `conda activate rad-classify`
 
 2. Install dependencies with: 
 `pip install --editable .`
-`pip install numpy pandas sklearn fasttext`
+`pip install numpy pandas sklearn fasttext nltk`
 
 1. Download the WOS dataset from https://data.mendeley.com/datasets/9rw3vkcfy4/2  
 and place in the data directory so it looks like data/WebOfScience/...
