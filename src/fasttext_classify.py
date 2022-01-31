@@ -8,9 +8,9 @@ import nltk
 import yake
 
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, f1_score
 
-from path_variables import WOS5736_X, WOS5736_Y, fasttext_train, pickle_keywords, pretrained_vectors
+from path_variables import WOS5736_X, WOS5736_Y, fasttext_train, pickle_keywords, pretrained_vectors, results_file, test_classifications
 from os.path import exists
 
 SEED = 0
@@ -23,7 +23,7 @@ with open(WOS5736_Y) as file:
     outputs = file.readlines()
 inputs = [i.strip() for i in inputs] 
 outputs = [o.strip() for o in outputs]
-df = pd.DataFrame({"Abstract":inputs, "Label_ID":outputs})
+df = pd.DataFrame({"Abstract":inputs, "Keywords": inputs, "Label_ID":outputs})
 start = time.time()
 
 # 1.1 Preprocess the inputs. This is good for some quick results before using Yake. 
@@ -35,16 +35,15 @@ if preprocessing:
     nltk.download('stopwords')
     stop_words = set(nltk.corpus.stopwords.words('english'))
 
-    df["Abstract_original"] = df["Abstract"]
-    df["Abstract"] = [a.lower() for a in df["Abstract"]]    # Lowercase
-    df["Abstract"] = [a.translate(str.maketrans('','',string.punctuation)) for a in df["Abstract"]] # Remove punctuation
-    df["Abstract"] = [" ".join([word for word in abstract.split() if word not in stop_words]) for abstract in df["Abstract"]]  # Remove stopwords
+    df["Keywords"] = [a.lower() for a in df["Keywords"]]    # Lowercase
+    df["Keywords"] = [a.translate(str.maketrans('','',string.punctuation)) for a in df["Keywords"]] # Remove punctuation
+    df["Keywords"] = [" ".join([word for word in abstract.split() if word not in stop_words]) for abstract in df["Keywords"]]  # Remove stopwords
     
     # Experiments indicate no improvements from stemming or lemmatizing
     # nltk.download('omw-1.4')
-    # tokens = [nltk.WordPunctTokenizer().tokenize(a) for a in df["Abstract"]]
-    # df["Abstract"] = [" ".join(nltk.WordNetLemmatizer().lemmatize(word) for word in abstract) for abstract in tokens]  # Lemmatizing
-    # df["Abstract"] = [" ".join(nltk.PorterStemmer().stem(word) for word in abstract) for abstract in tokens]  # Stemming
+    # tokens = [nltk.WordPunctTokenizer().tokenize(a) for a in df["Keywords"]]
+    # df["Keywords"] = [" ".join(nltk.WordNetLemmatizer().lemmatize(word) for word in abstract) for abstract in tokens]  # Lemmatizing
+    # df["Keywords"] = [" ".join(nltk.PorterStemmer().stem(word) for word in abstract) for abstract in tokens]  # Stemming
 
 # 1.2 Extract the keywords and save with pickle so I don't have to worry about datatype conversions
 # This takes a long time (~30 mins for WOS5736) and gives about a 2% accuracy boost (90% up from 88%) compared to just preprocessing
@@ -58,7 +57,7 @@ def extract_keywords(text):
 if yake_keywords:
     if not exists(pickle_keywords):
         keywords = []
-        for i, abstract in enumerate(df["Abstract"]):
+        for i, abstract in enumerate(df["Keywords"]):
             if i%10 == 0:
                 print(f"Extracted {i}/{len(df['Abstract'])} keywords, {time.ctime()}")
             abstract_keywords = extract_keywords(abstract)
@@ -70,14 +69,14 @@ if yake_keywords:
     with open(pickle_keywords, 'rb') as file:
         keywords = pickle.load(file)
     cutoff = 1
-    df["Abstract"] = [" ".join(keyword[0] for keyword in abstract if keyword[1] < cutoff) for abstract in keywords]
-    df["Abstract"] = [a.lower() for a in df["Abstract"]]    # Lowercasing after extracting keywords gives the best results
+    df["Keywords"] = [" ".join(keyword[0] for keyword in abstract if keyword[1] < cutoff) for abstract in keywords]
+    df["Keywords"] = [a.lower() for a in df["Keywords"]]    # Lowercasing after extracting keywords gives the best results
 
 # 2. Format for fasttext
 df_train, df_test = train_test_split(df, random_state=SEED)
 fasttext_format = []
 for index, row in df_train.iterrows():
-    fasttext_row = "__label__" + row["Label_ID"] + " " + row["Abstract"] + "\n"
+    fasttext_row = "__label__" + row["Label_ID"] + " " + row["Keywords"] + "\n"
     fasttext_format.append(fasttext_row)
 with open(fasttext_train, 'w') as file:
 	file.writelines(fasttext_format)
@@ -96,11 +95,21 @@ model = fasttext.train_supervised(
 duration = time.time() - start
 
 # 4. Evaluate the Results
-predictions = [model.predict(a) for a in df_test["Abstract"]]
-predicted_labels = [str(p[0][0][len("__label__"):]) for p in predictions]
-predicted_confidence = [p[1] for p in predictions]
+predictions = [model.predict(a) for a in df_test["Keywords"]]
+df_test["Prediction"] = [str(p[0][0][len("__label__"):]) for p in predictions]
+df_test["Confidence"] = [p[1][0] for p in predictions]
 
-df_confusion = pd.DataFrame(confusion_matrix(predicted_labels, df_test['Label_ID']))
-accuracy = accuracy_score(predicted_labels, df_test['Label_ID'])
-print(f"Accuracy: {accuracy}")
-print(f"Training time: {duration}")
+df_confusion = pd.DataFrame(confusion_matrix(df_test["Prediction"], df_test['Label_ID']))
+
+df_results = pd.Series({
+    "Accuracy": accuracy_score(df_test["Prediction"], df_test['Label_ID']),
+    "f1_micro": f1_score(df_test["Prediction"], df_test['Label_ID'], average='micro'),
+    "f1_macro": f1_score(df_test["Prediction"], df_test['Label_ID'], average='macro'),
+    "precision_micro": precision_score(df_test["Prediction"], df_test['Label_ID'], average='micro'),
+    "precision_macro": precision_score(df_test["Prediction"], df_test['Label_ID'], average='macro'),
+    "recall_micro": recall_score(df_test["Prediction"], df_test['Label_ID'], average='micro'),
+    "recall_macro": recall_score(df_test["Prediction"], df_test['Label_ID'], average='macro')
+})
+print(df_results)
+df_results.to_csv(results_file, header=False)
+df_test.to_csv(test_classifications)

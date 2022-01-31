@@ -24,3 +24,6 @@ pretrained_vectors = join(data_folder, "wiki-news-300d-1M.vec")
 # Preprocessing
 pickle_keywords = join(data_folder, 'keywords.pickle')
 
+# Results
+results_file = join(data_folder, "results.csv")
+test_classifications = join(data_folder, "test_classifications.csv")
