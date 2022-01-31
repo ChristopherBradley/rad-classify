@@ -19,5 +19,8 @@ WOS46985_Y = join(wos_folder, "WOS46985", "Y.txt")
 
 # Fasttext stuff
 fasttext_train = join(data_folder, 'fasttext_train.csv')
+pretrained_vectors = join(data_folder, "wiki-news-300d-1M.vec")
 
+# Preprocessing
+pickle_keywords = join(data_folder, 'keywords.pickle')
 
